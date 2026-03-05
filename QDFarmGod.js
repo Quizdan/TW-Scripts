@@ -508,10 +508,10 @@ window.FarmGod.Main = (function (Library, Translation) {
                 isNaN(optionWallA) ? 0 : optionWallA,
                 isNaN(optionWallB) ? 0 : optionWallB,
                 optionDistance
-              ).then((data) => {
+              ).then(async (data) => {
                 Dialog.close();
 
-                let plan = createPlanning(
+                let plan = await createPlanning(
                   optionDistance,
                   optionTime,
                   optionMaxloot,
@@ -1018,6 +1018,41 @@ window.FarmGod.Main = (function (Library, Translation) {
       return typeof level === 'number' && !isNaN(level) ? level : null;
     };
 
+    const getWallLevelLazy = async (coord) => {
+      const farm = data.farms.farms[coord];
+      if (!farm) return null;
+
+      // already known?
+      if (typeof farm.wall_level === 'number') return farm.wall_level;
+
+      // cached?
+      const cached = wallCache[coord];
+      if (cached && typeof cached.wall === 'number') {
+        farm.wall_level = cached.wall;
+        return cached.wall;
+      }
+
+      // need a report link from the LA plunder list
+      if (!farm.report_url) return null;
+
+      try {
+        const html = await twLib.get(farm.report_url);
+        const wl = parseWallLevelFromReport($(html));
+        if (typeof wl === 'number' && !isNaN(wl)) {
+          farm.wall_level = wl;
+          wallCache[coord] = { wall: wl, view: farm.report_view ?? null, ts: Date.now() };
+          setWallCache(wallCache);
+          return wl;
+        }
+      } catch (e) {
+        // ignore failures
+      }
+      return null;
+    };
+
+    // expose to planning (lazy fetching)
+    data.getWallLevelLazy = getWallLevelLazy;
+
     const enrichWallLevels = () => {
       // Only matters when user sets wall caps; if both are null/NaN, skip.
       let maxA = typeof optionWallA === 'number' ? optionWallA : 0;
@@ -1140,13 +1175,10 @@ window.FarmGod.Main = (function (Library, Translation) {
       findNewbarbs(),
     ])
       .then(filterFarms)
-      .then(enrichWallLevels)
-      .then(() => {
-        return data;
-      });
+      .then(() => data);
   };
 
-  const createPlanning = function (
+  const createPlanning = async function (
     optionDistance,
     optionTime,
     optionMaxloot,
@@ -1164,8 +1196,10 @@ window.FarmGod.Main = (function (Library, Translation) {
         })
         .sort((a, b) => (a.dis > b.dis ? 1 : -1));
 
-      orderedFarms.forEach((el) => {
-        let farmIndex = data.farms.farms[el.coord];
+      for (const el of orderedFarms) {
+        const farmIndex = data.farms.farms[el.coord];
+
+        // Decide template quickly from max loot first
         let template_name =
           optionMaxloot &&
           farmIndex.hasOwnProperty('max_loot') &&
@@ -1173,72 +1207,118 @@ window.FarmGod.Main = (function (Library, Translation) {
             ? 'b'
             : 'a';
 
-        // Wall-aware template selection (only when wall level is scouted/known).
-        let wl =
-          farmIndex && typeof farmIndex.wall_level === 'number'
-            ? farmIndex.wall_level
-            : null;
-
-        if (wl !== null) {
-          // Ignore villages with a scouted wall level above template B cap.
-          if (wl > optionWallB) return;
-
-          // If we wanted to send A but wall is too high for A, upgrade to B (if allowed).
-          if (template_name === 'a' && wl > optionWallA) {
-            template_name = 'b';
-          }
-
-          // If template is B but wall cap disallows it, skip.
-          if (template_name === 'b' && wl > optionWallB) return;
-        }
         let template = data.farms.templates[template_name];
+
+        // Cheap checks first (distance, units, timing)
+        const distance = lib.getDistance(prop, el.coord);
+        if (distance >= optionDistance) continue;
+
         let unitsLeft = lib.subtractArrays(
           data.villages[prop].units,
           template.units
         );
+        if (!unitsLeft) continue;
 
-        let distance = lib.getDistance(prop, el.coord);
         let arrival = Math.round(
           serverTime +
-          distance * template.speed * 60 +
-          Math.round(plan.counter / 5)
+            distance * template.speed * 60 +
+            Math.round(plan.counter / 5)
         );
-        let maxTimeDiff = Math.round(optionTime * 60);
+        const maxTimeDiff = Math.round(optionTime * 60);
+
         let timeDiff = true;
         if (data.commands.hasOwnProperty(el.coord)) {
           if (
             !farmIndex.hasOwnProperty('color') &&
             data.commands[el.coord].length > 0
-          )
+          ) {
             timeDiff = false;
-          data.commands[el.coord].forEach((timestamp) => {
-            if (Math.abs(timestamp - arrival) < maxTimeDiff)
-              timeDiff = false;
-          });
+          } else {
+            for (const timestamp of data.commands[el.coord]) {
+              if (Math.abs(timestamp - arrival) < maxTimeDiff) {
+                timeDiff = false;
+                break;
+              }
+            }
+          }
         } else {
           data.commands[el.coord] = [];
         }
+        if (!timeDiff) continue;
 
-        if (unitsLeft && timeDiff && distance < optionDistance) {
-          plan.counter++;
-          if (!plan.farms.hasOwnProperty(prop)) plan.farms[prop] = [];
+        // Lazy wall fetch ONLY for candidates that passed all cheap checks
+        let wl =
+          farmIndex && typeof farmIndex.wall_level === 'number'
+            ? farmIndex.wall_level
+            : null;
 
-          plan.farms[prop].push({
-            origin: {
-              coord: prop,
-              name: data.villages[prop].name,
-              id: data.villages[prop].id,
-            },
-            target: { coord: el.coord, id: farmIndex.id },
-            fields: distance,
-            wall: wl,
-            template: { name: template_name, id: template.id },
-          });
+        // Only attempt wall fetch if we have a report URL (from LA plunder list)
+        // and if wall caps might matter.
+        const wallCapsMatter =
+          typeof optionWallA === 'number' || typeof optionWallB === 'number';
 
-          data.villages[prop].units = unitsLeft;
-          data.commands[el.coord].push(arrival);
+        if (wl === null && wallCapsMatter && farmIndex && farmIndex.report_url) {
+          if (typeof data.getWallLevelLazy === 'function') {
+            wl = await data.getWallLevelLazy(el.coord);
+          }
         }
-      });
+
+        // Apply wall rules only when known
+        if (typeof wl === 'number' && !isNaN(wl)) {
+          // Ignore villages with a scouted wall level above template B cap.
+          if (wl > optionWallB) continue;
+
+          // If A is disallowed by wall, upgrade to B.
+          if (template_name === 'a' && wl > optionWallA) {
+            template_name = 'b';
+            template = data.farms.templates[template_name];
+
+            // Re-check units for template B
+            unitsLeft = lib.subtractArrays(
+              data.villages[prop].units,
+              template.units
+            );
+            if (!unitsLeft) continue;
+
+            // Recompute arrival for template B speed, and re-check timing
+            arrival = Math.round(
+              serverTime +
+                distance * template.speed * 60 +
+                Math.round(plan.counter / 5)
+            );
+
+            for (const timestamp of data.commands[el.coord]) {
+              if (Math.abs(timestamp - arrival) < maxTimeDiff) {
+                timeDiff = false;
+                break;
+              }
+            }
+            if (!timeDiff) continue;
+          }
+
+          // If template is B but wall cap disallows it, skip.
+          if (template_name === 'b' && wl > optionWallB) continue;
+        }
+
+        // Commit planned farm
+        plan.counter++;
+        if (!plan.farms.hasOwnProperty(prop)) plan.farms[prop] = [];
+
+        plan.farms[prop].push({
+          origin: {
+            coord: prop,
+            name: data.villages[prop].name,
+            id: data.villages[prop].id,
+          },
+          target: { coord: el.coord, id: farmIndex.id },
+          fields: distance,
+          wall: wl,
+          template: { name: template_name, id: template.id },
+        });
+
+        data.villages[prop].units = unitsLeft;
+        data.commands[el.coord].push(arrival);
+      }
     }
 
     return plan;
