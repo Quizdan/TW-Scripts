@@ -1,4 +1,6 @@
 // Hungarian translation provided by =Krumpli=
+// Original by Higamy
+// Modifications by Quizdan
 
 ScriptAPI.register('FarmGod', true, 'Warre', 'nl.tribalwars@coma.innogames.de');
 
