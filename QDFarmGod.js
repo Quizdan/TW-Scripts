@@ -491,7 +491,7 @@ window.FarmGod.Main = (function (Library, Translation) {
                   optionDistance: optionDistance,
                   optionTime: optionTime,
                   optionWallA: isNaN(optionWallA) ? 0 : optionWallA,
-                  optionWallB: isNaN(optionWallB) ? 1 : optionWallB,
+                  optionWallB: isNaN(optionWallB) ? 0 : optionWallB,
                   optionLosses: optionLosses,
                   optionMaxloot: optionMaxloot,
                   optionNewbarbs: optionNewbarbs,
@@ -506,7 +506,7 @@ window.FarmGod.Main = (function (Library, Translation) {
                 optionNewbarbs,
                 optionLosses,
                 isNaN(optionWallA) ? 0 : optionWallA,
-                isNaN(optionWallB) ? 1 : optionWallB,
+                isNaN(optionWallB) ? 0 : optionWallB,
                 optionDistance
               ).then((data) => {
                 Dialog.close();
@@ -516,7 +516,7 @@ window.FarmGod.Main = (function (Library, Translation) {
                   optionTime,
                   optionMaxloot,
                   isNaN(optionWallA) ? 0 : optionWallA,
-                  isNaN(optionWallB) ? 1 : optionWallB,
+                  isNaN(optionWallB) ? 0 : optionWallB,
                   data
                 );
                 $('.farmGodContent').remove();
@@ -590,7 +590,7 @@ window.FarmGod.Main = (function (Library, Translation) {
       optionDistance: 25,
       optionTime: 10,
       optionWallA: 0,
-      optionWallB: 1,
+      optionWallB: 0,
       optionLosses: false,
       optionMaxloot: true,
       optionNewbarbs: true,
@@ -634,7 +634,7 @@ window.FarmGod.Main = (function (Library, Translation) {
           }</td><td><input type="text" size="5" class="optionWallA" value="${(options.optionWallA ?? 0)
           }"></td></tr>
                   <tr><td>${t.options.wallB
-          }</td><td><input type="text" size="5" class="optionWallB" value="${(options.optionWallB ?? 1)
+          }</td><td><input type="text" size="5" class="optionWallB" value="${(options.optionWallB ?? 0)
           }"></td></tr>
                   <tr><td>${t.options.losses
           }</td><td><input type="checkbox" class="optionLosses" ${options.optionLosses ? 'checked' : ''
@@ -727,7 +727,7 @@ window.FarmGod.Main = (function (Library, Translation) {
     };
 
     const WALL_CACHE_KEY = 'FarmGod_wallCache_v1';
-    const WALL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+    const WALL_CACHE_TTL_MS = Infinity; // Max speed: never expire cached wall levels
     const getWallCache = () => {
       try {
         return JSON.parse(localStorage.getItem(WALL_CACHE_KEY)) || {};
@@ -951,18 +951,22 @@ window.FarmGod.Main = (function (Library, Translation) {
 
           if (!coord) return;
 
-          // Try to load cached wall level (if it matches the same report view and isn't stale)
+          // Try to load cached wall level (max speed: trust cached values regardless of age / report view).
+          // We still *source* wall levels from the LA plunder list (report links) when no cache exists.
           let cached = wallCache[coord];
           let cachedWall = null;
-          if (
-            cached &&
-            typeof cached.wall === 'number' &&
-            cached.view &&
-            reportViewId &&
-            String(cached.view) === String(reportViewId) &&
-            (!cached.ts || Date.now() - cached.ts < WALL_CACHE_TTL_MS)
-          ) {
+
+          if (cached && typeof cached.wall === 'number') {
             cachedWall = cached.wall;
+
+            // Keep cache metadata loosely aligned to the current report link without forcing a refetch.
+            if (reportViewId) {
+              wallCache[coord] = {
+                ...cached,
+                view: reportViewId,
+                ts: cached.ts || Date.now(),
+              };
+            }
           }
 
           return (data.farms.farms[coord] = {
@@ -1017,7 +1021,7 @@ window.FarmGod.Main = (function (Library, Translation) {
     const enrichWallLevels = () => {
       // Only matters when user sets wall caps; if both are null/NaN, skip.
       let maxA = typeof optionWallA === 'number' ? optionWallA : 0;
-      let maxB = typeof optionWallB === 'number' ? optionWallB : 1;
+      let maxB = typeof optionWallB === 'number' ? optionWallB : 0;
       if (isNaN(maxA) && isNaN(maxB)) return Promise.resolve(data);
 
       // Speed improvement: only fetch wall levels for farms that are actually within
