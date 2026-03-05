@@ -2,6 +2,7 @@
 // Original by Higamy
 // Modifications by Quizdan
 
+
 ScriptAPI.register('FarmGod', true, 'Warre', 'nl.tribalwars@coma.innogames.de');
 
 window.FarmGod = {};
@@ -345,6 +346,8 @@ window.FarmGod.Translation = (function () {
         group: 'Uit welke groep moet er gefarmd worden:',
         distance: 'Maximaal aantal velden dat farms mogen lopen:',
         time: 'Hoe veel tijd in minuten moet er tussen farms zitten:',
+        wallA: 'Max. wall level voor template A:',
+        wallB: 'Max. wall level voor template B:',
         losses: 'Verstuur farm naar dorpen met gedeeltelijke verliezen:',
         maxloot: 'Verstuur een B farm als de buit vorige keer vol was:',
         newbarbs: 'Voeg nieuwe barbarendorpen toe om te farmen:',
@@ -356,6 +359,7 @@ window.FarmGod.Translation = (function () {
         origin: 'Oorsprong',
         target: 'Doel',
         fields: 'Velden',
+        wall: 'Muur',
         farm: 'Farm',
         goTo: 'Ga naar',
       },
@@ -378,6 +382,8 @@ window.FarmGod.Translation = (function () {
         group: 'EbbÅ‘l a csoportbÃ³l kÃ¼ldje:',
         distance: 'MaximÃ¡lis mezÅ‘ tÃ¡volsÃ¡g:',
         time: 'Mekkora idÅ‘intervallumban kÃ¼ldje a tÃ¡madÃ¡sokat percben:',
+        wallA: 'Max. fal szint az "A" sablonhoz:',
+        wallB: 'Max. fal szint a "B" sablonhoz:',
         losses: 'KÃ¼ldjÃ¶n tÃ¡madÃ¡st olyan falvakba ahol rÃ©szleges vesztesÃ©ggel jÃ¡rhat a tÃ¡madÃ¡s:',
         maxloot:
           'A "B" sablont kÃ¼ldje abban az esetben, ha az elÅ‘zÅ‘ tÃ¡madÃ¡s maximÃ¡lis fosztogatÃ¡ssal jÃ¡rt:',
@@ -390,6 +396,7 @@ window.FarmGod.Translation = (function () {
         origin: 'Origin',
         target: 'CÃ©lpont',
         fields: 'TÃ¡volsÃ¡g',
+        wall: 'Fal',
         farm: 'Farm',
         goTo: 'Go to',
       },
@@ -411,6 +418,8 @@ window.FarmGod.Translation = (function () {
         group: 'Send farms from group:',
         distance: 'Maximum fields for farms:',
         time: 'How much time in minutes should there be between farms:',
+        wallA: 'Max wall level for template A:',
+        wallB: 'Max wall level for template B:',
         losses: 'Send farm to villages with partial losses:',
         maxloot: 'Send a B farm if the last loot was full:',
         newbarbs: 'Add new barbs te farm:',
@@ -422,6 +431,7 @@ window.FarmGod.Translation = (function () {
         origin: 'Origin',
         target: 'Target',
         fields: 'fields',
+        wall: 'Wall',
         farm: 'Farm',
         goTo: 'Go to',
       },
@@ -469,6 +479,8 @@ window.FarmGod.Main = (function (Library, Translation) {
                 $('.optionDistance').val()
               );
               let optionTime = parseFloat($('.optionTime').val());
+              let optionWallA = parseInt($('.optionWallA').val());
+              let optionWallB = parseInt($('.optionWallB').val());
               let optionLosses =
                 $('.optionLosses').prop('checked');
               let optionMaxloot =
@@ -482,6 +494,8 @@ window.FarmGod.Main = (function (Library, Translation) {
                   optionGroup: optionGroup,
                   optionDistance: optionDistance,
                   optionTime: optionTime,
+                  optionWallA: isNaN(optionWallA) ? 0 : optionWallA,
+                  optionWallB: isNaN(optionWallB) ? 1 : optionWallB,
                   optionLosses: optionLosses,
                   optionMaxloot: optionMaxloot,
                   optionNewbarbs: optionNewbarbs,
@@ -494,7 +508,9 @@ window.FarmGod.Main = (function (Library, Translation) {
               getData(
                 optionGroup,
                 optionNewbarbs,
-                optionLosses
+                optionLosses,
+                isNaN(optionWallA) ? 0 : optionWallA,
+                isNaN(optionWallB) ? 1 : optionWallB
               ).then((data) => {
                 Dialog.close();
 
@@ -502,6 +518,8 @@ window.FarmGod.Main = (function (Library, Translation) {
                   optionDistance,
                   optionTime,
                   optionMaxloot,
+                  isNaN(optionWallA) ? 0 : optionWallA,
+                  isNaN(optionWallB) ? 1 : optionWallB,
                   data
                 );
                 $('.farmGodContent').remove();
@@ -573,6 +591,8 @@ window.FarmGod.Main = (function (Library, Translation) {
       optionGroup: 0,
       optionDistance: 25,
       optionTime: 10,
+      optionWallA: 0,
+      optionWallB: 1,
       optionLosses: false,
       optionMaxloot: true,
       optionNewbarbs: true,
@@ -607,6 +627,12 @@ window.FarmGod.Main = (function (Library, Translation) {
           }"></td></tr>
                   <tr><td>${t.options.time
           }</td><td><input type="text" size="5" class="optionTime" value="${options.optionTime
+          }"></td></tr>
+                  <tr><td>${t.options.wallA
+          }</td><td><input type="text" size="5" class="optionWallA" value="${options.optionWallA
+          }"></td></tr>
+                  <tr><td>${t.options.wallB
+          }</td><td><input type="text" size="5" class="optionWallB" value="${options.optionWallB
           }"></td></tr>
                   <tr><td>${t.options.losses
           }</td><td><input type="checkbox" class="optionLosses" ${options.optionLosses ? 'checked' : ''
@@ -650,15 +676,16 @@ window.FarmGod.Main = (function (Library, Translation) {
   const buildTable = function (plan) {
     let html = `<div class="vis farmGodContent"><h4>FarmGod</h4><table class="vis" width="100%">
                 <tr><div id="FarmGodProgessbar" class="progress-bar live-progress-bar progress-bar-alive" style="width:98%;margin:5px auto;"><div style="background: rgb(146, 194, 0);"></div><span class="label" style="margin-top:0px;"></span></div></tr>
-                <tr><th style="text-align:center;">${t.table.origin}</th><th style="text-align:center;">${t.table.target}</th><th style="text-align:center;">${t.table.fields}</th><th style="text-align:center;">${t.table.farm}</th></tr>`;
+                <tr><th style="text-align:center;">${t.table.origin}</th><th style="text-align:center;">${t.table.target}</th><th style="text-align:center;">${t.table.fields}</th><th style="text-align:center;">${t.table.wall}</th><th style="text-align:center;">${t.table.farm}</th></tr>`;
 
     if (!$.isEmptyObject(plan)) {
       for (let prop in plan) {
         if (game_data.market == 'nl') {
-          html += `<tr><td colspan="4" style="background: #e7d098;"><input type="button" class="btn switchVillage" data-id="${plan[prop][0].origin.id}" value="${t.table.goTo} ${plan[prop][0].origin.name} (${plan[prop][0].origin.coord})" style="float:right;"></td></tr>`;
+          html += `<tr><td colspan="5" style="background: #e7d098;"><input type="button" class="btn switchVillage" data-id="${plan[prop][0].origin.id}" value="${t.table.goTo} ${plan[prop][0].origin.name} (${plan[prop][0].origin.coord})" style="float:right;"></td></tr>`;
         }
 
         plan[prop].forEach((val, i) => {
+          const wlDisplay = (val.target && typeof val.target.wall_level === 'number') ? val.target.wall_level : '-';
           html += `<tr class="farmRow row_${i % 2 == 0 ? 'a' : 'b'}">
                     <td style="text-align:center;"><a href="${game_data.link_base_pure
             }info_village&id=${val.origin.id}">${val.origin.name} (${val.origin.coord
@@ -667,6 +694,7 @@ window.FarmGod.Main = (function (Library, Translation) {
             }info_village&id=${val.target.id}">${val.target.coord
             }</a></td>
                     <td style="text-align:center;">${val.fields.toFixed(2)}</td>
+                    <td style="text-align:center;">${wlDisplay}</td>
                     <td style="text-align:center;"><a href="#" data-origin="${val.origin.id
             }" data-target="${val.target.id}" data-template="${val.template.id
             }" class="farmGod_icon farm_icon farm_icon_${val.template.name
@@ -675,7 +703,7 @@ window.FarmGod.Main = (function (Library, Translation) {
         });
       }
     } else {
-      html += `<tr><td colspan="4" style="text-align: center;">${t.table.noFarmsPlanned}</td></tr>`;
+      html += `<tr><td colspan="5" style="text-align: center;">${t.table.noFarmsPlanned}</td></tr>`;
     }
 
     html += `</table></div>`;
@@ -683,7 +711,7 @@ window.FarmGod.Main = (function (Library, Translation) {
     return html;
   };
 
-  const getData = function (group, newbarbs, losses) {
+  const getData = function (group, newbarbs, losses, optionWallA, optionWallB) {
     let data = {
       villages: {},
       commands: {},
@@ -876,23 +904,102 @@ window.FarmGod.Main = (function (Library, Translation) {
         .map((i, el) => {
           let $el = $(el);
 
-          return (data.farms.farms[
-            $el
-              .find('a[href*="screen=report&mode=all&view="]')
-              .first()
-              .text()
-              .toCoord()
-          ] = {
+          // Try to capture a scout report reference (if available) so we can read wall level later.
+          let $reportLink = $el
+            .find('a[href*="screen=report&mode=all&view="]')
+            .first();
+
+          let coord = $reportLink.text().toCoord();
+          let href = $reportLink.attr('href') || '';
+          let reportViewMatch = href.match(/view=(\d+)/);
+          let reportViewId = reportViewMatch
+            ? reportViewMatch[1].toNumber()
+            : null;
+          let reportUrl = href
+            ? href.startsWith('http')
+              ? href
+              : href.startsWith('/')
+                ? href
+                : '/' + href
+            : null;
+
+          if (!coord) return;
+
+          return (data.farms.farms[coord] = {
             id: $el.attr('id').split('_')[1].toNumber(),
             color: $el
               .find('img[src*="graphic/dots/"]')
               .attr('src')
               .match(/dots\/(green|yellow|red|blue|red_blue)/)[1],
             max_loot: $el.find('img[src*="max_loot/1"]').length > 0,
+            report_view: reportViewId,
+            report_url: reportUrl,
+            wall_level: null,
           });
         });
 
       return data;
+    };
+
+    const parseWallLevelFromReport = function ($reportHtml) {
+      // Most TW reports show buildings in a table row containing the wall building icon.
+      // We try a few resilient selectors to keep it world/language independent.
+      let level = null;
+
+      // 1) Buildings table row with wall icon.
+      let $row = $reportHtml
+        .find(
+          'img[src*="buildings/wall"], img[src*="building_wall"], img[src*="wall.png"]'
+        )
+        .first()
+        .closest('tr');
+
+      if ($row.length) {
+        let txt = $row.find('td').last().text().trim();
+        let m = txt.match(/\d+/);
+        if (m) level = parseInt(m[0], 10);
+      }
+
+      // 2) Fallback: sometimes the level is shown in a span next to a wall container.
+      if (level === null || isNaN(level)) {
+        let txt = $reportHtml
+          .find('#building_wall, .building_wall, [data-building="wall"]')
+          .first()
+          .text()
+          .trim();
+        let m = txt.match(/\d+/);
+        if (m) level = parseInt(m[0], 10);
+      }
+
+      return typeof level === 'number' && !isNaN(level) ? level : null;
+    };
+
+    const enrichWallLevels = () => {
+      // Only matters when user sets wall caps; if both are null/NaN, skip.
+      let maxA = typeof optionWallA === 'number' ? optionWallA : 0;
+      let maxB = typeof optionWallB === 'number' ? optionWallB : 1;
+      if (isNaN(maxA) && isNaN(maxB)) return Promise.resolve(data);
+
+      let farmsWithReports = Object.entries(data.farms.farms).filter(
+        ([, v]) => v && v.report_url && v.report_view !== null
+      );
+
+      if (!farmsWithReports.length) return Promise.resolve(data);
+
+      let promises = farmsWithReports.map(([coord, v]) => {
+        return twLib
+          .get(v.report_url)
+          .then((html) => {
+            let $r = $(html);
+            let wl = parseWallLevelFromReport($r);
+            if (wl !== null) data.farms.farms[coord].wall_level = wl;
+          })
+          .catch(() => {
+            // Ignore report load failures; wall stays unknown.
+          });
+      });
+
+      return Promise.all(promises).then(() => data);
     };
 
     let findNewbarbs = () => {
@@ -957,6 +1064,7 @@ window.FarmGod.Main = (function (Library, Translation) {
       findNewbarbs(),
     ])
       .then(filterFarms)
+      .then(enrichWallLevels)
       .then(() => {
         return data;
       });
@@ -966,6 +1074,8 @@ window.FarmGod.Main = (function (Library, Translation) {
     optionDistance,
     optionTime,
     optionMaxloot,
+    optionWallA,
+    optionWallB,
     data
   ) {
     let plan = { counter: 0, farms: {} };
@@ -982,10 +1092,29 @@ window.FarmGod.Main = (function (Library, Translation) {
         let farmIndex = data.farms.farms[el.coord];
         let template_name =
           optionMaxloot &&
-            farmIndex.hasOwnProperty('max_loot') &&
-            farmIndex.max_loot
+          farmIndex.hasOwnProperty('max_loot') &&
+          farmIndex.max_loot
             ? 'b'
             : 'a';
+
+        // Wall-aware template selection (only when wall level is scouted/known).
+        let wl =
+          farmIndex && typeof farmIndex.wall_level === 'number'
+            ? farmIndex.wall_level
+            : null;
+
+        if (wl !== null) {
+          // Ignore villages with a scouted wall level above template B cap.
+          if (wl > optionWallB) return;
+
+          // If we wanted to send A but wall is too high for A, upgrade to B (if allowed).
+          if (template_name === 'a' && wl > optionWallA) {
+            template_name = 'b';
+          }
+
+          // If template is B but wall cap disallows it, skip.
+          if (template_name === 'b' && wl > optionWallB) return;
+        }
         let template = data.farms.templates[template_name];
         let unitsLeft = lib.subtractArrays(
           data.villages[prop].units,
@@ -1024,7 +1153,14 @@ window.FarmGod.Main = (function (Library, Translation) {
               name: data.villages[prop].name,
               id: data.villages[prop].id,
             },
-            target: { coord: el.coord, id: farmIndex.id },
+            target: {
+              coord: el.coord,
+              id: farmIndex.id,
+              wall_level:
+                farmIndex && typeof farmIndex.wall_level === 'number'
+                  ? farmIndex.wall_level
+                  : null,
+            },
             fields: distance,
             template: { name: template_name, id: template.id },
           });
