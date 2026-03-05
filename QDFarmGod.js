@@ -569,8 +569,33 @@ window.FarmGod.Main = (function (Library, Translation) {
     $(document)
       .off('keydown')
       .on('keydown', (event) => {
-        if ((event.keyCode || event.which) == 13) {
+        const key = event.key || String.fromCharCode(event.keyCode || event.which);
+        const code = event.keyCode || event.which;
+
+        // Enter = send next one (existing behavior)
+        if (code == 13) {
           $('.farmGod_icon').first().trigger('click');
+          return;
+        }
+
+        // 'm' = mass-send all planned attacks with 0.2s spacing
+        if (key && key.toLowerCase() === 'm') {
+          if (window.__FarmGodMassSendRunning) return;
+          window.__FarmGodMassSendRunning = true;
+
+          const stepMs = 200;
+
+          const tick = () => {
+            const $next = $('.farmGod_icon').first();
+            if ($next.length === 0) {
+              window.__FarmGodMassSendRunning = false;
+              return;
+            }
+            $next.trigger('click');
+            setTimeout(tick, stepMs);
+          };
+
+          tick();
         }
       });
 
