@@ -509,8 +509,6 @@ window.FarmGod.Main = (function (Library, Translation) {
                 isNaN(optionWallB) ? 0 : optionWallB,
                 optionDistance
               ).then(async (data) => {
-                Dialog.close();
-
                 let plan = await createPlanning(
                   optionDistance,
                   optionTime,
@@ -519,6 +517,8 @@ window.FarmGod.Main = (function (Library, Translation) {
                   isNaN(optionWallB) ? 0 : optionWallB,
                   data
                 );
+                // Keep the loading throbber visible until results are ready.
+                Dialog.close();
                 $('.farmGodContent').remove();
                 $('#am_widget_Farm')
                   .first()
