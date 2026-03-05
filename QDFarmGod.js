@@ -2,7 +2,6 @@
 // Original by Higamy
 // Modifications by Quizdan
 
-
 ScriptAPI.register('FarmGod', true, 'Warre', 'nl.tribalwars@coma.innogames.de');
 
 window.FarmGod = {};
@@ -359,7 +358,6 @@ window.FarmGod.Translation = (function () {
         origin: 'Oorsprong',
         target: 'Doel',
         fields: 'Velden',
-        wall: 'Muur',
         farm: 'Farm',
         goTo: 'Ga naar',
       },
@@ -396,7 +394,6 @@ window.FarmGod.Translation = (function () {
         origin: 'Origin',
         target: 'CÃ©lpont',
         fields: 'TÃ¡volsÃ¡g',
-        wall: 'Fal',
         farm: 'Farm',
         goTo: 'Go to',
       },
@@ -431,7 +428,6 @@ window.FarmGod.Translation = (function () {
         origin: 'Origin',
         target: 'Target',
         fields: 'fields',
-        wall: 'Wall',
         farm: 'Farm',
         goTo: 'Go to',
       },
@@ -510,7 +506,8 @@ window.FarmGod.Main = (function (Library, Translation) {
                 optionNewbarbs,
                 optionLosses,
                 isNaN(optionWallA) ? 0 : optionWallA,
-                isNaN(optionWallB) ? 1 : optionWallB
+                isNaN(optionWallB) ? 1 : optionWallB,
+                optionDistance
               ).then((data) => {
                 Dialog.close();
 
@@ -587,7 +584,8 @@ window.FarmGod.Main = (function (Library, Translation) {
   };
 
   const buildOptions = function () {
-    let options = JSON.parse(localStorage.getItem('farmGod_options')) || {
+    // Merge saved options with defaults to avoid "undefined" on newly added settings.
+    const defaults = {
       optionGroup: 0,
       optionDistance: 25,
       optionTime: 10,
@@ -596,6 +594,10 @@ window.FarmGod.Main = (function (Library, Translation) {
       optionLosses: false,
       optionMaxloot: true,
       optionNewbarbs: true,
+    };
+    let options = {
+      ...defaults,
+      ...(JSON.parse(localStorage.getItem('farmGod_options')) || {}),
     };
     let checkboxSettings = [false, true, true, true, false];
     let checkboxError = $('#plunder_list_filters')
@@ -629,10 +631,10 @@ window.FarmGod.Main = (function (Library, Translation) {
           }</td><td><input type="text" size="5" class="optionTime" value="${options.optionTime
           }"></td></tr>
                   <tr><td>${t.options.wallA
-          }</td><td><input type="text" size="5" class="optionWallA" value="${options.optionWallA
+          }</td><td><input type="text" size="5" class="optionWallA" value="${(options.optionWallA ?? 0)
           }"></td></tr>
                   <tr><td>${t.options.wallB
-          }</td><td><input type="text" size="5" class="optionWallB" value="${options.optionWallB
+          }</td><td><input type="text" size="5" class="optionWallB" value="${(options.optionWallB ?? 1)
           }"></td></tr>
                   <tr><td>${t.options.losses
           }</td><td><input type="checkbox" class="optionLosses" ${options.optionLosses ? 'checked' : ''
@@ -676,7 +678,7 @@ window.FarmGod.Main = (function (Library, Translation) {
   const buildTable = function (plan) {
     let html = `<div class="vis farmGodContent"><h4>FarmGod</h4><table class="vis" width="100%">
                 <tr><div id="FarmGodProgessbar" class="progress-bar live-progress-bar progress-bar-alive" style="width:98%;margin:5px auto;"><div style="background: rgb(146, 194, 0);"></div><span class="label" style="margin-top:0px;"></span></div></tr>
-                <tr><th style="text-align:center;">${t.table.origin}</th><th style="text-align:center;">${t.table.target}</th><th style="text-align:center;">${t.table.fields}</th><th style="text-align:center;">${t.table.wall}</th><th style="text-align:center;">${t.table.farm}</th></tr>`;
+                <tr><th style="text-align:center;">${t.table.origin}</th><th style="text-align:center;">${t.table.target}</th><th style="text-align:center;">${t.table.fields}</th><th style="text-align:center;">Wall</th><th style="text-align:center;">${t.table.farm}</th></tr>`;
 
     if (!$.isEmptyObject(plan)) {
       for (let prop in plan) {
@@ -685,7 +687,6 @@ window.FarmGod.Main = (function (Library, Translation) {
         }
 
         plan[prop].forEach((val, i) => {
-          const wlDisplay = (val.target && typeof val.target.wall_level === 'number') ? val.target.wall_level : '-';
           html += `<tr class="farmRow row_${i % 2 == 0 ? 'a' : 'b'}">
                     <td style="text-align:center;"><a href="${game_data.link_base_pure
             }info_village&id=${val.origin.id}">${val.origin.name} (${val.origin.coord
@@ -694,7 +695,7 @@ window.FarmGod.Main = (function (Library, Translation) {
             }info_village&id=${val.target.id}">${val.target.coord
             }</a></td>
                     <td style="text-align:center;">${val.fields.toFixed(2)}</td>
-                    <td style="text-align:center;">${wlDisplay}</td>
+                    <td style="text-align:center;">${(val.wall === null || typeof val.wall === 'undefined') ? '-' : val.wall}</td>
                     <td style="text-align:center;"><a href="#" data-origin="${val.origin.id
             }" data-target="${val.target.id}" data-template="${val.template.id
             }" class="farmGod_icon farm_icon farm_icon_${val.template.name
@@ -711,12 +712,37 @@ window.FarmGod.Main = (function (Library, Translation) {
     return html;
   };
 
-  const getData = function (group, newbarbs, losses, optionWallA, optionWallB) {
+  const getData = function (
+    group,
+    newbarbs,
+    losses,
+    optionWallA,
+    optionWallB,
+    optionDistance
+  ) {
     let data = {
       villages: {},
       commands: {},
       farms: { templates: {}, farms: {} },
     };
+
+    const WALL_CACHE_KEY = 'FarmGod_wallCache_v1';
+    const WALL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+    const getWallCache = () => {
+      try {
+        return JSON.parse(localStorage.getItem(WALL_CACHE_KEY)) || {};
+      } catch (e) {
+        return {};
+      }
+    };
+    const setWallCache = (cache) => {
+      try {
+        localStorage.setItem(WALL_CACHE_KEY, JSON.stringify(cache));
+      } catch (e) {
+        // ignore
+      }
+    };
+    const wallCache = getWallCache();
 
     let villagesProcessor = ($html) => {
       let skipUnits = ['ram', 'catapult', 'knight', 'snob', 'militia'];
@@ -925,6 +951,20 @@ window.FarmGod.Main = (function (Library, Translation) {
 
           if (!coord) return;
 
+          // Try to load cached wall level (if it matches the same report view and isn't stale)
+          let cached = wallCache[coord];
+          let cachedWall = null;
+          if (
+            cached &&
+            typeof cached.wall === 'number' &&
+            cached.view &&
+            reportViewId &&
+            String(cached.view) === String(reportViewId) &&
+            (!cached.ts || Date.now() - cached.ts < WALL_CACHE_TTL_MS)
+          ) {
+            cachedWall = cached.wall;
+          }
+
           return (data.farms.farms[coord] = {
             id: $el.attr('id').split('_')[1].toNumber(),
             color: $el
@@ -934,7 +974,7 @@ window.FarmGod.Main = (function (Library, Translation) {
             max_loot: $el.find('img[src*="max_loot/1"]').length > 0,
             report_view: reportViewId,
             report_url: reportUrl,
-            wall_level: null,
+            wall_level: cachedWall,
           });
         });
 
@@ -980,9 +1020,31 @@ window.FarmGod.Main = (function (Library, Translation) {
       let maxB = typeof optionWallB === 'number' ? optionWallB : 1;
       if (isNaN(maxA) && isNaN(maxB)) return Promise.resolve(data);
 
+      // Speed improvement: only fetch wall levels for farms that are actually within
+      // the distance filter of at least one source village, AND that don't already
+      // have a cached/scouted wall level.
+      const originCoords = Object.keys(data.villages);
+      const maxDist = typeof optionDistance === 'number' ? optionDistance : null;
+
       let farmsWithReports = Object.entries(data.farms.farms).filter(
-        ([, v]) => v && v.report_url && v.report_view !== null
+        ([, v]) =>
+          v &&
+          v.report_url &&
+          v.report_view !== null &&
+          (typeof v.wall_level !== 'number')
       );
+
+      if (!farmsWithReports.length) return Promise.resolve(data);
+
+      if (maxDist !== null && originCoords.length) {
+        farmsWithReports = farmsWithReports.filter(([coord]) => {
+          // Keep if any origin can reach it within maxDist
+          for (let i = 0; i < originCoords.length; i++) {
+            if (lib.getDistance(originCoords[i], coord) < maxDist) return true;
+          }
+          return false;
+        });
+      }
 
       if (!farmsWithReports.length) return Promise.resolve(data);
 
@@ -992,14 +1054,24 @@ window.FarmGod.Main = (function (Library, Translation) {
           .then((html) => {
             let $r = $(html);
             let wl = parseWallLevelFromReport($r);
-            if (wl !== null) data.farms.farms[coord].wall_level = wl;
+            if (wl !== null) {
+              data.farms.farms[coord].wall_level = wl;
+              wallCache[coord] = {
+                wall: wl,
+                view: v.report_view,
+                ts: Date.now(),
+              };
+            }
           })
           .catch(() => {
             // Ignore report load failures; wall stays unknown.
           });
       });
 
-      return Promise.all(promises).then(() => data);
+      return Promise.all(promises).then(() => {
+        setWallCache(wallCache);
+        return data;
+      });
     };
 
     let findNewbarbs = () => {
@@ -1153,15 +1225,9 @@ window.FarmGod.Main = (function (Library, Translation) {
               name: data.villages[prop].name,
               id: data.villages[prop].id,
             },
-            target: {
-              coord: el.coord,
-              id: farmIndex.id,
-              wall_level:
-                farmIndex && typeof farmIndex.wall_level === 'number'
-                  ? farmIndex.wall_level
-                  : null,
-            },
+            target: { coord: el.coord, id: farmIndex.id },
             fields: distance,
+            wall: wl,
             template: { name: template_name, id: template.id },
           });
 
