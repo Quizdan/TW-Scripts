@@ -973,12 +973,12 @@ window.FarmGod.Main = (function (lib, t) {
     const colorsA = opts.optionColorsA || {};
     const colorsB = opts.optionColorsB || {};
 
-    const isColorAllowed = (templateName, farmIndex) => {
-      if (!farmIndex || !farmIndex.hasOwnProperty('color')) return true;
-      const c = farmIndex.color;
-      const map = templateName === 'b' ? colorsB : colorsA;
-      return map[c] === true;
-    };
+  const isColorAllowed = (templateName, farmIndex) => {
+    if (!farmIndex || !farmIndex.hasOwnProperty('color') || !farmIndex.color) return true; // <-- add this
+    const c = farmIndex.color;
+    const map = templateName === 'b' ? colorsB : colorsA;
+    return map[c] === true;
+  };
 
     const wallCache = getWallCache();
 
@@ -1151,13 +1151,22 @@ window.FarmGod.Main = (function (lib, t) {
 
   return {
     init: function () {
-      if (typeof Accountmanager === 'undefined' || $('#am_widget_Farm').length === 0) {
-        UI.ErrorMessage(t.missingFeatures);
-        return;
-      }
-      buildOptions();
-    },
+  // redirect to the correct page like the original script
+    if (game_data.screen !== 'am_farm') {
+      location.href = game_data.link_base_pure + 'am_farm';
+      return;
+    }
+
+    // now we *are* on Loot Assistant: require Premium/Loot Assistant widget
+    if (typeof Accountmanager === 'undefined' || $('#am_widget_Farm').length === 0) {
+      UI.ErrorMessage(t.missingFeatures);
+      return;
+    }
+
+    buildOptions();
+  },
   };
+
 })(window.FarmGod.Library, window.FarmGod.Translation);
 
 (() => {
