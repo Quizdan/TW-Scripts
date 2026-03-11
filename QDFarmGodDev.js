@@ -2,7 +2,13 @@
 // Original by Higamy
 // Modifications by Quizdan
 
-ScriptAPI.register('FarmGod', true, 'Warre', 'nl.tribalwars@coma.innogames.de');
+try {
+  if (typeof ScriptAPI !== 'undefined' && ScriptAPI?.register) {
+    ScriptAPI.register('FarmGod', true, 'Warre', 'nl.tribalwars@coma.innogames.de');
+  }
+} catch (e) {
+  // ignore ScriptAPI issues; script can still run without it
+}
 
 window.FarmGod = {};
 window.FarmGod.Library = (function () {
