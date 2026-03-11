@@ -769,17 +769,385 @@ window.FarmGod.Main = (function (lib, t) {
     });
   };
 
-  // ----- ORIGINAL getData / createPlanning / sendFarm / init -----
-  // (These are long; but they are already included in your uploaded file.
-  // If you want, I can paste them here too, but it will be the same code you already had.)
-  // For now, we keep them unchanged: PLEASE KEEP YOUR EXISTING FUNCTIONS BELOW IN YOUR FILE.
+ // ---------- Data collection ----------
+  const getData = function (group, maxloot, newbarbs) {
+    let unitSpeeds = lib.getUnitSpeeds();
+    let data = {
+      villages: {},
+      commands: {},
+      farms: { templates: {}, farms: {} },
+    };
 
-  /* ===== IMPORTANT =====
-     If you are replacing the whole file with this paste:
-     You MUST keep the remainder of your original QDFarmGodDev.js
-     below this point (getData/createPlanning/sendFarm/init).
-     Otherwise it will not plan anything.
-     ===================== */
+    let farmProcessor = ($html) => {
+      $html
+        .find('#am_widget_Farm a.farm_icon_a, #am_widget_Farm a.farm_icon_b')
+        .each((_, el) => {
+          const $el = $(el);
+          const name = $el.hasClass('farm_icon_a') ? 'a' : 'b';
+          const templateId = $el.attr('data-template');
+          if (templateId && !data.farms.templates[name]) {
+            data.farms.templates[name] = {
+              id: templateId,
+              name,
+              speed: 10,
+              units: [],
+            };
+          }
+        });
+
+      $html.find('#plunder_list tr[id^="village_"]').each((_, tr) => {
+        const $tr = $(tr);
+        const id = $tr.attr('id').replace('village_', '').toNumber();
+        const coord = $tr.find('td').first().text().toCoord();
+        if (!coord) return;
+
+        const dot = $tr.find('.dot').first();
+        let color = null;
+        if (dot.hasClass('green')) color = 'green';
+        else if (dot.hasClass('blue')) color = 'blue';
+        else if (dot.hasClass('yellow')) color = 'yellow';
+        else if (dot.hasClass('red')) color = 'red';
+
+        let max_loot = false;
+        if (maxloot) {
+          if (
+            $tr.find('img[src*="max_loot"], img[src*="full"]').length > 0 ||
+            $tr.text().toLowerCase().includes('max')
+          ) {
+            max_loot = true;
+          }
+        }
+
+        let report_url = null;
+        let report_view = null;
+        const reportA = $tr.find('a[href*="screen=report"][href*="view="]').first();
+        if (reportA && reportA.length) {
+          const href = reportA.attr('href');
+          report_url = href;
+          const m = href.match(/view=(\d+)/);
+          if (m) report_view = m[1];
+        }
+
+        data.farms.farms[coord] = {
+          id,
+          color,
+          max_loot,
+          report_url,
+          report_view,
+        };
+      });
+
+      return $html;
+    };
+
+    let villagesProcessor = ($html) => {
+      let unitHeaders = $html
+        .find('#combined_table thead th img')
+        .map((_, img) => {
+          const src = $(img).attr('src') || '';
+          const m = src.match(/unit_(\w+)\.png/);
+          return m ? m[1] : null;
+        })
+        .get()
+        .filter(Boolean);
+
+      const speedList = Object.values(unitSpeeds).filter((v) => typeof v === 'number');
+      const fallbackSpeed = speedList.length ? Math.max(...speedList) : 10;
+      if (data.farms.templates.a) data.farms.templates.a.speed = fallbackSpeed;
+      if (data.farms.templates.b) data.farms.templates.b.speed = fallbackSpeed;
+
+      $html.find('#combined_table tr.nowrap').each((_, tr) => {
+        const $tr = $(tr);
+        const vid = $tr.find('span.quickedit-vn').attr('data-id');
+        const name = $tr.find('span.quickedit-vn').text().trim();
+        const coord = name.toCoord();
+        if (!vid || !coord) return;
+
+        const rowUnits = [];
+        unitHeaders.forEach((u) =>
+          rowUnits.push(
+            parseInt($tr.find(`td img[src*="unit_${u}"]`).closest('td').next().text(), 10) || 0
+          )
+        );
+
+        data.villages[coord] = {
+          id: vid.toNumber(),
+          name: name.replace(coord, '').trim(),
+          units: rowUnits.length ? rowUnits : unitHeaders.map(() => 0),
+        };
+      });
+
+      return $html;
+    };
+
+    let commandsProcessor = ($html) => {
+      $html.find('#commands_table tr.command-row').each((_, tr) => {
+        const $tr = $(tr);
+        const target = $tr.find('td').eq(1).text().toCoord();
+        if (!target) return;
+
+        const timeStr = $tr.find('td').last().text().trim();
+        const ts = Math.round(lib.timestampFromString(timeStr) / 1000);
+
+        if (!data.commands[target]) data.commands[target] = [];
+        data.commands[target].push(ts);
+      });
+
+      return $html;
+    };
+
+    let wallCache = getWallCache();
+
+    let enrichWallLevels = () => {
+      setWallCache(wallCache);
+      return data;
+    };
+
+    let findNewbarbs = () => {
+      if (newbarbs) {
+        return twLib.get('/map/village.txt').then((allVillages) => {
+          allVillages.match(/[^\r\n]+/g).forEach((villageData) => {
+            let [id, name, x, y, player_id] = villageData.split(',');
+            let coord = `${x}|${y}`;
+
+            if (player_id == 0 && !data.farms.farms.hasOwnProperty(coord)) {
+              data.farms.farms[coord] = {
+                id: id.toNumber(),
+              };
+            }
+          });
+
+          return data;
+        });
+      } else {
+        return data;
+      }
+    };
+
+    let filterFarms = () => data;
+
+    return Promise.all([
+      lib.processAllPages(
+        TribalWars.buildURL('GET', 'overview_villages', {
+          mode: 'combined',
+          group: group,
+        }),
+        villagesProcessor
+      ),
+      lib.processAllPages(
+        TribalWars.buildURL('GET', 'overview_villages', {
+          mode: 'commands',
+          type: 'attack',
+        }),
+        commandsProcessor
+      ),
+      lib.processAllPages(TribalWars.buildURL('GET', 'am_farm'), farmProcessor),
+      findNewbarbs(),
+    ])
+      .then(filterFarms)
+      .then(enrichWallLevels)
+      .then(() => {
+        return data;
+      });
+  };
+
+  const createPlanning = async function (opts, data) {
+    let plan = { counter: 0, farms: {} };
+    let serverTime = Math.round(lib.getCurrentServerTime() / 1000);
+    let nowTs = serverTime;
+
+    const distA = parseFloat(opts.optionDistanceA);
+    const distB = parseFloat(opts.optionDistanceB);
+    const maxTimeDiff = Math.round(parseFloat(opts.optionTime) * 60);
+
+    const maxWallA =
+      typeof opts.optionWallA === 'number' && !isNaN(opts.optionWallA) ? opts.optionWallA : 0;
+    const maxWallB =
+      typeof opts.optionWallB === 'number' && !isNaN(opts.optionWallB) ? opts.optionWallB : 0;
+
+    const fullHaulAgeMin =
+      typeof opts.optionFullHaulAgeMinutes === 'number' && !isNaN(opts.optionFullHaulAgeMinutes)
+        ? opts.optionFullHaulAgeMinutes
+        : 120;
+
+    const colorsA = opts.optionColorsA || {};
+    const colorsB = opts.optionColorsB || {};
+
+    const isColorAllowed = (templateName, farmIndex) => {
+      if (!farmIndex || !farmIndex.hasOwnProperty('color')) return true;
+      const c = farmIndex.color;
+      const map = templateName === 'b' ? colorsB : colorsA;
+      return map[c] === true;
+    };
+
+    const wallCache = getWallCache();
+
+    for (let prop in data.villages) {
+      let orderedFarms = Object.keys(data.farms.farms)
+        .map((key) => {
+          return { coord: key, dis: lib.getDistance(prop, key) };
+        })
+        .sort((a, b) => (a.dis > b.dis ? 1 : -1));
+
+      for (const el of orderedFarms) {
+        const coord = el.coord;
+        const farmIndex = data.farms.farms[coord];
+        const distance = el.dis;
+
+        let template_name = 'a';
+
+        const allowA = isColorAllowed('a', farmIndex);
+        const allowB = isColorAllowed('b', farmIndex);
+
+        if (opts.optionMaxloot && farmIndex && farmIndex.max_loot && allowB && distance < distB) {
+          let report_ts =
+            wallCache[coord] && typeof wallCache[coord].report_ts === 'number'
+              ? wallCache[coord].report_ts
+              : null;
+
+          if (report_ts === null && farmIndex.report_url) {
+            const meta = await getFarmReportMetaLazy(coord, farmIndex, wallCache);
+            report_ts = meta.report_ts;
+          }
+
+          if (typeof report_ts === 'number') {
+            const ageSec = Math.max(0, nowTs - report_ts);
+            if (ageSec <= fullHaulAgeMin * 60) {
+              template_name = 'b';
+            }
+          } else {
+            template_name = 'a';
+          }
+        }
+
+        if (template_name === 'a' && !allowA && allowB) template_name = 'b';
+
+        const maxDist = template_name === 'b' ? distB : distA;
+        if (!(distance < maxDist)) continue;
+
+        if (template_name === 'a' && !allowA) continue;
+        if (template_name === 'b' && !allowB) continue;
+
+        let template = data.farms.templates[template_name];
+        if (!template) continue;
+
+        let unitsLeft = lib.subtractArrays(data.villages[prop].units, template.units);
+        if (!unitsLeft) continue;
+
+        let arrival = Math.round(
+          serverTime + distance * template.speed * 60 + Math.round(plan.counter / 5)
+        );
+
+        let timeDiff = true;
+        if (data.commands.hasOwnProperty(coord)) {
+          if (!farmIndex.hasOwnProperty('color') && data.commands[coord].length > 0) timeDiff = false;
+          for (const timestamp of data.commands[coord]) {
+            if (Math.abs(timestamp - arrival) < maxTimeDiff) {
+              timeDiff = false;
+              break;
+            }
+          }
+        } else {
+          data.commands[coord] = [];
+        }
+        if (!timeDiff) continue;
+
+        let wall = null;
+        if (farmIndex && farmIndex.report_url) {
+          const meta = await getFarmReportMetaLazy(coord, farmIndex, wallCache);
+          wall = meta.wall;
+        } else if (farmIndex && typeof farmIndex.wall_level === 'number') {
+          wall = farmIndex.wall_level;
+        }
+
+        if (typeof wall === 'number') {
+          if (wall > maxWallB) continue;
+
+          if (template_name === 'a' && wall > maxWallA) {
+            if (!allowB) continue;
+            if (!(distance < distB)) continue;
+
+            const templateB = data.farms.templates['b'];
+            if (!templateB) continue;
+
+            const unitsLeftB = lib.subtractArrays(data.villages[prop].units, templateB.units);
+            if (!unitsLeftB) continue;
+
+            const arrivalB = Math.round(
+              serverTime + distance * templateB.speed * 60 + Math.round(plan.counter / 5)
+            );
+
+            let ok = true;
+            for (const timestamp of data.commands[coord]) {
+              if (Math.abs(timestamp - arrivalB) < maxTimeDiff) {
+                ok = false;
+                break;
+              }
+            }
+            if (!ok) continue;
+
+            template_name = 'b';
+            template = templateB;
+            unitsLeft = unitsLeftB;
+            arrival = arrivalB;
+          }
+        }
+
+        plan.counter++;
+        if (!plan.farms.hasOwnProperty(prop)) plan.farms[prop] = [];
+
+        plan.farms[prop].push({
+          origin: {
+            coord: prop,
+            name: data.villages[prop].name,
+            id: data.villages[prop].id,
+          },
+          target: { coord: coord, id: farmIndex.id },
+          fields: distance,
+          template: { name: template_name, id: template.id },
+          wall: wall,
+        });
+
+        data.villages[prop].units = unitsLeft;
+        data.commands[coord].push(arrival);
+      }
+    }
+
+    return plan;
+  };
+
+  const sendFarm = function ($this) {
+    let n = Timing.getElapsedTimeSinceLoad();
+    if (!(farmBusy || (Accountmanager.farm.last_click && n - Accountmanager.farm.last_click < 200))) {
+      farmBusy = true;
+      Accountmanager.farm.last_click = n;
+      let $pb = $('#FarmGodProgessbar');
+
+      TribalWars.post(
+        Accountmanager.send_units_link.replace(/village=(\d+)/, 'village=' + $this.data('origin')),
+        null,
+        {
+          target: $this.data('target'),
+          template_id: $this.data('template'),
+          source: $this.data('origin'),
+        },
+        function (r) {
+          UI.SuccessMessage(r.success);
+          $pb.data('current', $pb.data('current') + 1);
+          UI.updateProgressBar($pb, $pb.data('current'), $pb.data('max'));
+          $this.closest('.farmRow').remove();
+          farmBusy = false;
+        },
+        function (r) {
+          UI.ErrorMessage(r || t.messages.sendError);
+          $pb.data('current', $pb.data('current') + 1);
+          UI.updateProgressBar($pb, $pb.data('current'), $pb.data('max'));
+          $this.closest('.farmRow').remove();
+          farmBusy = false;
+        }
+      );
+    }
+  };
 
   return {
     init: function () {
