@@ -703,6 +703,16 @@ window.FarmGod.Main = (function (Library, Translation) {
   const buildTable = function (plan) {
     let html = `<div class="vis farmGodContent"><h4>FarmGod</h4><table class="vis" width="100%">
                 <tr><div id="FarmGodProgessbar" class="progress-bar live-progress-bar progress-bar-alive" style="width:98%;margin:5px auto;"><div style="background: rgb(146, 194, 0);"></div><span class="label" style="margin-top:0px;"></span></div></tr>
+                <tr>
+                  <td colspan="5" style="text-align:center; padding:10px;">
+                    <input
+                      type="button"
+                      class="btn farmGod_sendAll"
+                      value="Send all"
+                      style="font-size:16px; padding:10px 22px; width:90%; max-width:360px;"
+                    >
+                  </td>
+                </tr>
                 <tr><th style="text-align:center;">${t.table.origin}</th><th style="text-align:center;">${t.table.target}</th><th style="text-align:center;">${t.table.fields}</th><th style="text-align:center;">Wall</th><th style="text-align:center;">${t.table.farm}</th></tr>`;
 
     if (!$.isEmptyObject(plan)) {
