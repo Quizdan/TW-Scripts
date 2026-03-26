@@ -566,38 +566,49 @@ window.FarmGod.Main = (function (Library, Translation) {
         }
       });
 
-    $(document)
-      .off('keydown')
-      .on('keydown', (event) => {
-        const key = event.key || String.fromCharCode(event.keyCode || event.which);
-        const code = event.keyCode || event.which;
+      const startMassSend = () => {
+        if (window.__FarmGodMassSendRunning) return;
+        window.__FarmGodMassSendRunning = true;
 
-        // Enter = send next one (existing behavior)
-        if (code == 13) {
-          $('.farmGod_icon').first().trigger('click');
-          return;
-        }
+        const stepMs = 200;
 
-        // 'm' = mass-send all planned attacks with 0.2s spacing
-        if (key && key.toLowerCase() === 'm') {
-          if (window.__FarmGodMassSendRunning) return;
-          window.__FarmGodMassSendRunning = true;
+        const tick = () => {
+          const $next = $('.farmGod_icon').first();
+          if ($next.length === 0) {
+            window.__FarmGodMassSendRunning = false;
+            return;
+          }
+          $next.trigger('click');
+          setTimeout(tick, stepMs);
+        };
 
-          const stepMs = 200;
+        tick();
+      };
 
-          const tick = () => {
-            const $next = $('.farmGod_icon').first();
-            if ($next.length === 0) {
-              window.__FarmGodMassSendRunning = false;
-              return;
-            }
-            $next.trigger('click');
-            setTimeout(tick, stepMs);
-          };
+      // Button for mobile
+      $('.farmGod_sendAll')
+        .off('click')
+        .on('click', () => startMassSend());
 
-          tick();
-        }
-      });
+      // Existing hotkeys
+      $(document)
+        .off('keydown')
+        .on('keydown', (event) => {
+          const key = event.key || String.fromCharCode(event.keyCode || event.which);
+          const code = event.keyCode || event.which;
+
+          // Enter = send next one
+          if (code == 13) {
+            $('.farmGod_icon').first().trigger('click');
+            return;
+          }
+
+          // 'm' = send all
+          if (key && key.toLowerCase() === 'm') {
+            startMassSend();
+          }
+        });
+     
 
     $('.switchVillage')
       .off('click')
