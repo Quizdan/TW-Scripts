@@ -108,6 +108,9 @@ window.FarmGod.Library = (function () {
         return twLib.queueLib.orchestrator("ajax", arguments);
       },
       get: function () {
+        if (arguments.length === 1 && typeof arguments[0] === "object") {
+          return twLib.queueLib.orchestrator("ajax", arguments);
+        }
         return twLib.queueLib.orchestrator("get", arguments);
       },
       post: function () {
@@ -199,6 +202,7 @@ window.FarmGod.Library = (function () {
     return twLib
       .ajax({
         url: url + pageText,
+        cache: false,
       })
       .then((html) => {
         return wrapFn(page, $(html));
@@ -723,14 +727,14 @@ window.FarmGod.Main = (function (Library, Translation) {
                   <td colspan="5" style="text-align:center; padding:10px; display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
                     <input
                       type="button"
-                      class="btn farmGod_sendAll"
-                      value="Send all"
+                      class="btn farmGod_refreshData"
+                      value="Refresh data"
                       style="font-size:16px; padding:10px 22px; width:220px; max-width:360px;"
                     >
                     <input
                       type="button"
-                      class="btn farmGod_refreshData"
-                      value="Refresh data"
+                      class="btn farmGod_sendAll"
+                      value="Send all"
                       style="font-size:16px; padding:10px 22px; width:220px; max-width:360px;"
                     >
                   </td>
@@ -964,11 +968,20 @@ window.FarmGod.Main = (function (Library, Translation) {
           let $el = $(el);
 
           // Try to capture a scout report reference (if available) so we can read wall level later.
-          let $reportLink = $el
-            .find('a[href*="screen=report&mode=all&view="]')
-            .first();
+          let $reportLink = $el.find('a[href*="screen=report"]').first();
 
           let coord = $reportLink.text().toCoord();
+          if (!coord) {
+            coord = $el.find(".quickedit-label").first().text().toCoord();
+          }
+          if (!coord) {
+            coord = $el
+              .find('a[href*="info_village&id="]')
+              .first()
+              .text()
+              .toCoord();
+          }
+
           let href = $reportLink.attr("href") || "";
           let reportViewMatch = href.match(/view=(\d+)/);
           let reportViewId = reportViewMatch
@@ -1069,7 +1082,7 @@ window.FarmGod.Main = (function (Library, Translation) {
       if (!farm.report_url) return null;
 
       try {
-        const html = await twLib.get(farm.report_url);
+        const html = await twLib.get({ url: farm.report_url, cache: false });
         const wl = parseWallLevelFromReport($(html));
         if (typeof wl === "number" && !isNaN(wl)) {
           farm.wall_level = wl;
@@ -1127,7 +1140,7 @@ window.FarmGod.Main = (function (Library, Translation) {
 
       let promises = farmsWithReports.map(([coord, v]) => {
         return twLib
-          .get(v.report_url)
+          .get({ url: v.report_url, cache: false })
           .then((html) => {
             let $r = $(html);
             let wl = parseWallLevelFromReport($r);
@@ -1153,20 +1166,22 @@ window.FarmGod.Main = (function (Library, Translation) {
 
     let findNewbarbs = () => {
       if (newbarbs) {
-        return twLib.get("/map/village.txt").then((allVillages) => {
-          allVillages.match(/[^\r\n]+/g).forEach((villageData) => {
-            let [id, name, x, y, player_id] = villageData.split(",");
-            let coord = `${x}|${y}`;
+        return twLib
+          .get({ url: "/map/village.txt", cache: false })
+          .then((allVillages) => {
+            allVillages.match(/[^\r\n]+/g).forEach((villageData) => {
+              let [id, name, x, y, player_id] = villageData.split(",");
+              let coord = `${x}|${y}`;
 
-            if (player_id == 0 && !data.farms.farms.hasOwnProperty(coord)) {
-              data.farms.farms[coord] = {
-                id: id.toNumber(),
-              };
-            }
+              if (player_id == 0 && !data.farms.farms.hasOwnProperty(coord)) {
+                data.farms.farms[coord] = {
+                  id: id.toNumber(),
+                };
+              }
+            });
+
+            return data;
           });
-
-          return data;
-        });
       } else {
         return data;
       }
