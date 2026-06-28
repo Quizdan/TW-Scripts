@@ -427,6 +427,8 @@ window.FarmGod.Main = (function (Library, Translation) {
   const t = Translation.get();
   let curVillage = null;
   let farmBusy = false;
+  let refreshBusy = false;
+  let lastOptions = null;
 
   const init = function () {
     if (
@@ -465,6 +467,17 @@ window.FarmGod.Main = (function (Library, Translation) {
               );
 
               $(".optionsContent").html(UI.Throbber[0].outerHTML + "<br><br>");
+              lastOptions = {
+                group: optionGroup,
+                newbarbs: optionNewbarbs,
+                losses: optionLosses,
+                optionWallA: isNaN(optionWallA) ? 0 : optionWallA,
+                optionWallB: isNaN(optionWallB) ? 0 : optionWallB,
+                optionDistance: optionDistance,
+                optionTime: optionTime,
+                optionMaxloot: optionMaxloot,
+              };
+
               getData(
                 optionGroup,
                 optionNewbarbs,
@@ -544,6 +557,27 @@ window.FarmGod.Main = (function (Library, Translation) {
     $(".farmGod_sendAll")
       .off("click")
       .on("click", () => startMassSend());
+
+    $(".farmGod_refreshData")
+      .off("click")
+      .on("click", async () => {
+        if (refreshBusy) return;
+        if (!lastOptions) return;
+
+        refreshBusy = true;
+        const $button = $(".farmGod_refreshData");
+        const originalValue = $button.val();
+        $button.val("Refreshing...").prop("disabled", true);
+        $(".farmGod_sendAll").prop("disabled", true);
+
+        try {
+          await refreshPlan(true);
+        } finally {
+          refreshBusy = false;
+          $button.val(originalValue).prop("disabled", false);
+          $(".farmGod_sendAll").prop("disabled", false);
+        }
+      });
 
     // Existing hotkeys
     $(document)
@@ -686,12 +720,18 @@ window.FarmGod.Main = (function (Library, Translation) {
     let html = `<div class="vis farmGodContent"><h4>FarmGod</h4><table class="vis" width="100%">
                 <tr><div id="FarmGodProgessbar" class="progress-bar live-progress-bar progress-bar-alive" style="width:98%;margin:5px auto;"><div style="background: rgb(146, 194, 0);"></div><span class="label" style="margin-top:0px;"></span></div></tr>
                 <tr>
-                  <td colspan="5" style="text-align:center; padding:10px;">
+                  <td colspan="5" style="text-align:center; padding:10px; display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
                     <input
                       type="button"
                       class="btn farmGod_sendAll"
                       value="Send all"
-                      style="font-size:16px; padding:10px 22px; width:90%; max-width:360px;"
+                      style="font-size:16px; padding:10px 22px; width:220px; max-width:360px;"
+                    >
+                    <input
+                      type="button"
+                      class="btn farmGod_refreshData"
+                      value="Refresh data"
+                      style="font-size:16px; padding:10px 22px; width:220px; max-width:360px;"
                     >
                   </td>
                 </tr>
@@ -743,6 +783,7 @@ window.FarmGod.Main = (function (Library, Translation) {
     optionWallA,
     optionWallB,
     optionDistance,
+    forceWallRefresh = false,
   ) {
     let data = {
       villages: {},
@@ -1165,7 +1206,12 @@ window.FarmGod.Main = (function (Library, Translation) {
       findNewbarbs(),
     ])
       .then(filterFarms)
-      .then(() => data);
+      .then(() => {
+        if (forceWallRefresh) {
+          return enrichWallLevels().then(() => data);
+        }
+        return data;
+      });
   };
 
   const createPlanning = async function (
@@ -1317,6 +1363,36 @@ window.FarmGod.Main = (function (Library, Translation) {
     }
 
     return plan;
+  };
+
+  const refreshPlan = async (forceWallRefresh = false) => {
+    if (!lastOptions) return;
+
+    const data = await getData(
+      lastOptions.group,
+      lastOptions.newbarbs,
+      lastOptions.losses,
+      lastOptions.optionWallA,
+      lastOptions.optionWallB,
+      lastOptions.optionDistance,
+      forceWallRefresh,
+    );
+
+    const plan = await createPlanning(
+      lastOptions.optionDistance,
+      lastOptions.optionTime,
+      lastOptions.optionMaxloot,
+      lastOptions.optionWallA,
+      lastOptions.optionWallB,
+      data,
+    );
+
+    $(".farmGodContent").remove();
+    $("#am_widget_Farm").first().before(buildTable(plan.farms));
+    bindEventHandlers();
+    UI.InitProgressBars();
+    UI.updateProgressBar($("#FarmGodProgessbar"), 0, plan.counter);
+    $("#FarmGodProgessbar").data("current", 0).data("max", plan.counter);
   };
 
   const sendFarm = function ($this) {
